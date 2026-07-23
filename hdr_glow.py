@@ -18,6 +18,7 @@ dependency-light, tweakable CLI version. Reverse-engineered, not invented.
 """
 import argparse
 import io
+import os
 import struct
 import sys
 import zlib
@@ -72,9 +73,29 @@ def tag_hdr(png_bytes: bytes) -> bytes:
     return b"".join(out)
 
 
+_ICC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "assets", "rec2020-pq.icc")
+
+
 def convert(inp: str, outp: str, nits: int = 1000) -> str:
-    from PIL import Image  # only needed for the brightness remap
+    from PIL import Image  # only needed for pixel work
     im = Image.open(inp).convert("RGBA")
+    ext = os.path.splitext(outp)[1].lower()
+
+    if ext in (".jpg", ".jpeg"):
+        # LinkedIn-robust path. LinkedIn re-encodes uploads to JPEG, which DROPS
+        # a PNG cICP chunk but PRESERVES an embedded ICC profile. So we tag the
+        # image with a real Rec.2020 + PQ ICC profile (the same mechanism Wiz
+        # uses) and save JPEG. White stays ~255 and the profile makes it burn.
+        with open(_ICC_PATH, "rb") as f:
+            icc = f.read()
+        bg = Image.new("RGB", im.size, (0, 0, 0))
+        bg.paste(im, mask=im.split()[3])           # flatten alpha onto black
+        bg.save(outp, "JPEG", quality=95, subsampling=0, icc_profile=icc)
+        return outp
+
+    # PNG path: cICP tag + optional brightness remap (for self-hosted web use,
+    # e.g. an <img> you serve yourself, where the chunk is never stripped).
     if nits < 10000:
         k = pq_oetf(nits / 10000.0)  # brightest code -> `nits` on PQ curve
         lut = [round(v * k) for v in range(256)]
@@ -115,17 +136,26 @@ def demo() -> None:
     white = out.getpixel((0, 0))
     assert white[0] == round(255 * pq_oetf(0.1)) == 192, f"white remap wrong: {white}"
     assert out.getpixel((1, 0))[:3] == (0, 0, 0), "black should stay black"
-    print("demo OK: PQ math, cICP tag, and remap all verified")
+
+    # JPEG path must embed the ICC profile (the bit LinkedIn preserves).
+    jpg = "/tmp/_hdrglow_dst.jpg"
+    convert(src, jpg)
+    jdata = open(jpg, "rb").read()
+    assert b"ICC_PROFILE" in jdata, "JPEG output is missing its ICC profile"
+    assert Image.open(jpg).info.get("icc_profile"), "ICC profile not readable back"
+    print("demo OK: PQ math, cICP tag, remap, and JPEG+ICC all verified")
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("input", nargs="?", help="input logo PNG")
-    p.add_argument("output", nargs="?", help="output HDR PNG")
+    p.add_argument("output", nargs="?",
+                   help="output file. Use .jpg for LinkedIn (embeds a PQ ICC "
+                        "profile that survives re-encoding); .png for self-hosted web")
     p.add_argument("--nits", type=int, default=1000,
-                   help="peak brightness of white pixels (default 1000; "
-                        "Wiz used ~4000; max 10000 = raw superwhite)")
+                   help="PNG only: peak brightness of white (default 1000; "
+                        "Wiz ~4000; 10000 = max). JPEG uses the ICC profile as-is")
     p.add_argument("--demo", action="store_true", help="run self-check and exit")
     args = p.parse_args()
 

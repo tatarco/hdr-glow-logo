@@ -30,17 +30,40 @@ pip install pillow   # only dependency (used for the brightness knob)
 
 ## Use
 
+**For LinkedIn (or anywhere the platform re-encodes your upload) → output `.jpg`:**
+
+```bash
+python3 hdr_glow.py your-logo.png your-logo-hdr.jpg
+```
+
+This embeds a real **Rec.2020 + PQ ICC profile** — the same mechanism Wiz uses.
+Upload the JPEG as a **company/brand page logo** (personal profile photos get
+re-encoded harder). View on an HDR display to see it burn.
+
+**For a page you host yourself (e.g. an `<img>` on your own site) → `.png`:**
+
 ```bash
 python3 hdr_glow.py your-logo.png your-logo-hdr.png --nits 4000
 ```
 
-Upload the result as a **company/brand page logo** on LinkedIn (personal profile
-photos get re-encoded and lose the effect; page logos don't). View on an HDR
-display to see it burn.
+- `--nits` — *PNG only* — peak brightness of the white pixels. Default `1000`
+  (visible, not eye-searing). Wiz ~`4000`. `10000` = raw superwhite. The JPEG
+  path uses the ICC profile as-is (white stays 255).
+- `--demo` — run the built-in self-check (PQ math + cICP tag + remap + JPEG/ICC).
 
-- `--nits` — peak brightness of the white pixels. Default `1000` (visible, not
-  eye-searing). Wiz used ~`4000`. `10000` = raw superwhite, maximum burn.
-- `--demo` — run the built-in self-check (PQ math + tag + remap).
+### Why two formats — the gotcha that makes it *actually* work
+
+The magic is a colour tag that says "interpret this as HDR." There are two ways
+to attach it, and they survive very differently:
+
+| Carrier | Where it works | Survives a platform re-encode? |
+|---|---|---|
+| PNG `cICP` chunk | pages **you** serve | ❌ **No** — LinkedIn converts PNG→JPEG and drops the chunk → flat |
+| **ICC profile in a JPEG** | anywhere, incl. LinkedIn | ✅ **Yes** — ICC profiles are copied through |
+
+So a PNG+cICP looks great on your own site but goes **flat after you upload it to
+LinkedIn**. The JPEG+ICC path is what glows in the feed. (Verified by pulling the
+live Wiz logo off LinkedIn: it's a JPEG carrying a `...PQ Transfer` ICC profile.)
 
 ## How it works
 

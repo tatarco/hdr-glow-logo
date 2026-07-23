@@ -19,14 +19,27 @@ decode at up to ~4,000 nits and outshine the ~200-nit white of the feed.
 
 The whole thing is one script, `hdr_glow.py` (needs Python 3 + `pillow`).
 
+**For LinkedIn / social (platform re-encodes the upload) → output `.jpg`:**
+
+```bash
+python3 hdr_glow.py INPUT.png OUTPUT.jpg
+```
+
+This embeds a Rec.2020+PQ **ICC profile** (bundled at `assets/rec2020-pq.icc`),
+which survives LinkedIn's JPEG re-encode. **A PNG `cICP` chunk does NOT survive
+it** — it looks great on a self-hosted page but goes flat once uploaded. This is
+the #1 mistake; default to JPEG for anything posted to a platform.
+
+**For a self-hosted `<img>` → `.png`:**
+
 ```bash
 python3 hdr_glow.py INPUT.png OUTPUT.png --nits 4000
 ```
 
-- `--nits` sets peak white brightness. Default `1000` (safe, visible). `4000` ~
-  matches Wiz. `10000` = maximum burn (eye-searing, clips on most panels).
-- Verify the output tag: `ffprobe -show_entries stream=color_transfer,color_primaries OUTPUT.png` should report `smpte2084` / `bt2020`.
-- Self-check the script anytime: `python3 hdr_glow.py --demo`.
+- `--nits` (PNG only) sets peak white brightness. `4000` ~ matches Wiz.
+- Verify a JPEG's profile: `python3 -c "from PIL import Image;print(bool(Image.open('OUT.jpg').info.get('icc_profile')))"` → `True`.
+- Verify a PNG's tag: `ffprobe -show_entries stream=color_transfer,color_primaries OUT.png` → `smpte2084` / `bt2020`.
+- Self-check the script: `python3 hdr_glow.py --demo`.
 
 ## What to tell the user afterwards
 
